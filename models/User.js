@@ -1,61 +1,25 @@
-// models/User.js
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-const userSchema = new mongoose.Schema(
-  {
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-      lowercase: true,
-      trim: true,
-    },
-    password_hash: {
-      type: String,
-      required: true,
-    },
-    full_name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    username: {
-      type: String,
-      unique: true,
-      sparse: true,
-      lowercase: true,
-      trim: true,
-    },
-    role: {
-      type: String,
-      enum: ["user", "admin"],
-      default: "user",
-    },
-    status: {
-      type: String,
-      enum: ["active", "suspended"],
-      default: "active",
-    },
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, maxlength: 100 },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  username: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 30 },
+  password: { type: String, required: true, minlength: 6, select: false },
+  avatar: { type: String, default: '' },
+  bio: { type: String, default: '', maxlength: 300 },
+  plan: { type: String, enum: ['starter', 'pro', 'premium'], default: 'starter' },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  isBanned: { type: Boolean, default: false },
+}, { timestamps: true });
 
-    // ── Plan & billing ──
-    plan: {
-      type: String,             // "Free", "Starter", "Pro", "Premium", etc.
-      default: "Free",
-    },
-    plan_status: {
-      type: String,
-      enum: ["active", "past_due", "canceled", "trialing"],
-      default: "active",
-    },
-    plan_renewal_date: {
-      type: Date,
-      default: null,
-    },
-  },
-  {
-    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  }
-);
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
+  this.password = await bcrypt.hash(this.password, 12);
+});
 
-module.exports = mongoose.model("User", userSchema);
+userSchema.methods.comparePassword = function (plain) {
+  return bcrypt.compare(plain, this.password);
+};
+
+module.exports = mongoose.model('User', userSchema);

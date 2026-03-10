@@ -6,7 +6,9 @@ function validate(schema) {
         field: e.path.join("."),
         message: e.message,
       }));
-      return res.status(400).json({ error: "Validation failed", details: errors });
+      return res
+        .status(400)
+        .json({ error: "Validation failed", details: errors });
     }
     req.body = result.data;
     next();

@@ -1,56 +1,63 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-const path = require("path");
-const errorHandler = require("./middleware/errorHandler");
-const connectDB = require("./config/db");
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1);
 
-// --------------- Middleware ---------------
 app.use(helmet());
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "*",
-    credentials: true,
-  })
-);
-app.use(morgan("dev"));
-app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(morgan('dev'));
 
-// --------------- Routes ---------------
-// server.js
+app.use(cors({
+  origin: process.env.CLIENT_URL || 'http://localhost:8080',
+  credentials: false,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 
-app.use("/api/auth",       require("./routes/auth.routes"));
-app.use("/api/profile",    require("./routes/profile.routes"));
-app.use("/api/links",      require("./routes/links.routes"));
-app.use("/api/analytics",  require("./routes/analytics.routes"));
-app.use("/api/appearance", require("./routes/appearance.routes"));
-app.use("/api/pdf-card",   require("./routes/pdfcard.routes"));
-app.use("/api/public",     require("./routes/public.routes"));
-app.use("/api/admin",      require("./routes/admin.routes"));   // NEW
-app.use("/api/coupons",    require("./routes/coupon.routes"));  // NEW
-// Health check
-app.get("/api/health", (req, res) =>
-  res.json({ status: "ok", timestamp: new Date() })
-);
+app.use(express.json({ limit: '1mb' }));
 
-// --------------- Error Handler ---------------
-app.use(errorHandler);
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
-// --------------- Start ---------------
-const PORT = process.env.PORT || 5000;
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/user', require('./routes/user'));
+app.use('/api/links', require('./routes/links'));
+app.use('/api/appearance', require('./routes/appearance'));
+app.use('/api/card', require('./routes/card'));
+app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/qr', require('./routes/qr'));
+app.use('/api/coupons', require('./routes/coupons'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/public', require('./routes/public'));
 
-connectDB()
-  .then(() => {
-    app.listen(PORT, () =>
-      console.log(`🚀 Server running on port ${PORT}`)
-    );
-  })
-  .catch((err) => {
-    console.error("Failed to start server:", err);
+// Optional (only if you installed razorpay)
+// app.use('/api/payments', require('./routes/payments'));
+
+// 404
+app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
+
+async function start() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ MongoDB Connected');
+
+    const port = process.env.PORT || 5000;
+    app.listen(port, () => {
+      console.log('=================================');
+      console.log(`🚀 Server running on port ${port}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🔗 API URL: http://localhost:${port}/api`);
+      console.log('=================================');
+    });
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
     process.exit(1);
-  });
+  }
+}
+
+start();
