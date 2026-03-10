@@ -12,11 +12,25 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(morgan('dev'));
 
+const allowedOrigins = [
+  "https://linkshub-lake.vercel.app",
+  "https://linkshub-git-master-akshats-projects-494deadc.vercel.app",
+  "https://linkshub-j8jpx9cew-akshats-projects-494deadc.vercel.app"
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://linkshub-j8jpx9cew-akshats-projects-494deadc.vercel.app',
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS not allowed"));
+  },
   credentials: false,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"]
 }));
 
 app.use(express.json({ limit: '1mb' }));
