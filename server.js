@@ -13,7 +13,7 @@ app.use(helmet());
 app.use(morgan('dev'));
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://linkshub-lake.vercel.app',
+  origin: process.env.FRONTEND_URL || 'https://linkshub-j8jpx9cew-akshats-projects-494deadc.vercel.app',
   credentials: false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
