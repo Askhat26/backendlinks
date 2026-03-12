@@ -48,7 +48,7 @@ app.use('/api/qr', require('./routes/qr'));
 app.use('/api/coupons', require('./routes/coupons'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/public', require('./routes/public'));
-
+app.use("/api/uploads", require("./routes/uploads"));
 // Optional (only if you installed razorpay)
 // app.use('/api/payments', require('./routes/payments'));
 
