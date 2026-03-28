@@ -120,6 +120,14 @@ function drawSplitBg(doc, w, h, left, right, at = 0.5) {
 
 function uploadBufferToCloudinary(buffer, folder = "linkshub/card-logos") {
   return new Promise((resolve, reject) => {
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_API_SECRET
+    ) {
+      return reject(new Error("Cloudinary environment variables are missing"));
+    }
+
     const stream = cloudinary.uploader.upload_stream(
       {
         folder,
@@ -140,6 +148,7 @@ function uploadBufferToCloudinary(buffer, folder = "linkshub/card-logos") {
   });
 }
 
+// GET card
 router.get("/", auth, requireFeature("hasCard"), async (req, res) => {
   try {
     let card = await Card.findOne({ userId: req.user._id });
@@ -147,8 +156,8 @@ router.get("/", auth, requireFeature("hasCard"), async (req, res) => {
     if (!card) {
       card = await Card.create({
         userId: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
+        name: req.user.name || "",
+        email: req.user.email || "",
         template: "luxury-dark-gold",
       });
     }
@@ -160,6 +169,7 @@ router.get("/", auth, requireFeature("hasCard"), async (req, res) => {
   }
 });
 
+// UPDATE card
 router.put("/", auth, requireFeature("hasCard"), async (req, res) => {
   try {
     const {
@@ -196,7 +206,7 @@ router.put("/", auth, requireFeature("hasCard"), async (req, res) => {
     const card = await Card.findOneAndUpdate(
       { userId: req.user._id },
       updateData,
-      { new: true, upsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
     res.json({ card });
@@ -206,6 +216,7 @@ router.put("/", auth, requireFeature("hasCard"), async (req, res) => {
   }
 });
 
+// UPLOAD logo
 router.post(
   "/logo",
   auth,
@@ -222,7 +233,7 @@ router.post(
       const card = await Card.findOneAndUpdate(
         { userId: req.user._id },
         { logoUrl: result.secure_url },
-        { new: true, upsert: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
 
       res.json({
@@ -231,11 +242,14 @@ router.post(
       });
     } catch (err) {
       console.error("Card logo upload error:", err);
-      res.status(500).json({ error: "Failed to upload logo" });
+      res.status(500).json({
+        error: err.message || "Failed to upload logo",
+      });
     }
   }
 );
 
+// DELETE logo
 router.delete("/logo", auth, requireFeature("hasCard"), async (req, res) => {
   try {
     const card = await Card.findOneAndUpdate(
@@ -251,6 +265,7 @@ router.delete("/logo", auth, requireFeature("hasCard"), async (req, res) => {
   }
 });
 
+// PDF
 router.get("/pdf", auth, requireFeature("hasCard"), async (req, res) => {
   try {
     const card = await Card.findOne({ userId: req.user._id });
@@ -299,8 +314,7 @@ router.get("/pdf", auth, requireFeature("hasCard"), async (req, res) => {
 
     const displayName = card.brandName || card.name || "YOUR BRAND";
     const displayTagline = card.tagline || "";
-    const servicesText =
-      card.servicesText || "Web • App • SEO • Digital Marketing";
+    const servicesText = card.servicesText || "Add your services or brand message";
 
     if (card.logoUrl) {
       try {
