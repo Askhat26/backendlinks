@@ -11,6 +11,8 @@ const cardSchema = new mongoose.Schema({
   template: { type: String, default: 'minimal-white' },
   brandName: { type: String, default: '' },
   tagline: { type: String, default: '' },
+  logoUrl: { type: String, default: '' },
+  servicesText: { type: String, default: '' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Card', cardSchema);

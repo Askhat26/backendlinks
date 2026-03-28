@@ -1,7 +1,10 @@
 const router = require("express").Router();
+const streamifier = require("streamifier");
 const Card = require("../models/Card");
 const auth = require("../middleware/auth");
 const { requireFeature } = require("../middleware/planGate");
+const upload = require("../middleware/uploadMemory");
+const cloudinary = require("../utils/cloudinary");
 const PDFDocument = require("pdfkit");
 const QRCode = require("qrcode");
 
@@ -115,6 +118,28 @@ function drawSplitBg(doc, w, h, left, right, at = 0.5) {
   doc.restore();
 }
 
+function uploadBufferToCloudinary(buffer, folder = "linkshub/card-logos") {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: "image",
+        transformation: [
+          { width: 600, height: 600, crop: "limit" },
+          { quality: "auto" },
+          { fetch_format: "auto" },
+        ],
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    streamifier.createReadStream(buffer).pipe(stream);
+  });
+}
+
 router.get("/", auth, requireFeature("hasCard"), async (req, res) => {
   try {
     let card = await Card.findOne({ userId: req.user._id });
@@ -147,6 +172,8 @@ router.put("/", auth, requireFeature("hasCard"), async (req, res) => {
       template,
       brandName,
       tagline,
+      logoUrl,
+      servicesText,
     } = req.body;
 
     if (template !== undefined && !ALLOWED_TEMPLATES.has(template)) {
@@ -163,6 +190,8 @@ router.put("/", auth, requireFeature("hasCard"), async (req, res) => {
     if (template !== undefined) updateData.template = template;
     if (brandName !== undefined) updateData.brandName = brandName;
     if (tagline !== undefined) updateData.tagline = tagline;
+    if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+    if (servicesText !== undefined) updateData.servicesText = servicesText;
 
     const card = await Card.findOneAndUpdate(
       { userId: req.user._id },
@@ -174,6 +203,51 @@ router.put("/", auth, requireFeature("hasCard"), async (req, res) => {
   } catch (err) {
     console.error("Update card error:", err);
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+router.post(
+  "/logo",
+  auth,
+  requireFeature("hasCard"),
+  upload.single("logo"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Logo file is required" });
+      }
+
+      const result = await uploadBufferToCloudinary(req.file.buffer);
+
+      const card = await Card.findOneAndUpdate(
+        { userId: req.user._id },
+        { logoUrl: result.secure_url },
+        { new: true, upsert: true }
+      );
+
+      res.json({
+        logoUrl: result.secure_url,
+        card,
+      });
+    } catch (err) {
+      console.error("Card logo upload error:", err);
+      res.status(500).json({ error: "Failed to upload logo" });
+    }
+  }
+);
+
+router.delete("/logo", auth, requireFeature("hasCard"), async (req, res) => {
+  try {
+    const card = await Card.findOneAndUpdate(
+      { userId: req.user._id },
+      { logoUrl: "" },
+      { new: true }
+    );
+
+    res.json({ card });
+  } catch (err) {
+    console.error("Delete card logo error:", err);
+    res.status(500).json({ error: "Failed to remove logo" });
   }
 });
 
@@ -211,85 +285,92 @@ router.get("/pdf", auth, requireFeature("hasCard"), async (req, res) => {
     const safeName = sanitizeFilename(card.name || card.brandName || "business");
 
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=${safeName}-card.pdf`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename=${safeName}-card.pdf`);
 
     doc.pipe(res);
 
     const theme = getPdfTheme(card.template);
 
-    // FRONT
     if (theme.front.split) {
       drawSplitBg(doc, W, H, theme.front.bg1, theme.front.bg2, theme.front.splitAt || 0.5);
     } else {
       drawGradientBg(doc, W, H, theme.front.bg1, theme.front.bg2);
     }
 
-    const displayName = card.brandName || card.name || "Your Brand";
-    const displaySub = card.brandName ? (card.tagline || "") : (card.role || "");
-    const initial = displayName.charAt(0).toUpperCase();
+    const displayName = card.brandName || card.name || "YOUR BRAND";
+    const displayTagline = card.tagline || "";
+    const servicesText =
+      card.servicesText || "Web • App • SEO • Digital Marketing";
 
-    const iconSize = 34;
-    const iconX = (W - iconSize) / 2;
-    const iconY = 22;
+    if (card.logoUrl) {
+      try {
+        const logoY = 28;
+        const logoW = 64;
+        const logoH = 64;
+        doc.image(card.logoUrl, (W - logoW) / 2, logoY, {
+          fit: [logoW, logoH],
+          align: "center",
+          valign: "center",
+        });
+      } catch (e) {
+        const iconSize = 34;
+        const iconX = (W - iconSize) / 2;
+        const iconY = 32;
 
-    doc.save();
-    doc.fillOpacity(0.18);
-    doc.roundedRect(iconX, iconY, iconSize, iconSize, 8).fill(theme.front.accent);
-    doc.restore();
+        doc.save();
+        doc.fillOpacity(0.18);
+        doc.roundedRect(iconX, iconY, iconSize, iconSize, 8).fill(theme.front.accent);
+        doc.restore();
 
-    doc.save();
-    doc.lineWidth(1.2);
-    doc.strokeOpacity(0.45);
-    doc.roundedRect(iconX, iconY, iconSize, iconSize, 8).stroke(theme.front.accent);
-    doc.restore();
+        doc.font("Helvetica-Bold").fontSize(17).fillColor(theme.front.accent);
+        doc.text(displayName.charAt(0).toUpperCase(), iconX, iconY + 8, {
+          width: iconSize,
+          align: "center",
+          lineBreak: false,
+        });
+      }
+    } else {
+      const iconSize = 34;
+      const iconX = (W - iconSize) / 2;
+      const iconY = 32;
 
-    doc.font("Helvetica-Bold").fontSize(17).fillColor(theme.front.accent);
-    doc.text(initial, iconX, iconY + 8, {
-      width: iconSize,
-      align: "center",
-      lineBreak: false,
-    });
+      doc.save();
+      doc.fillOpacity(0.18);
+      doc.roundedRect(iconX, iconY, iconSize, iconSize, 8).fill(theme.front.accent);
+      doc.restore();
 
-    const nameY = iconY + iconSize + 14;
-    doc.font("Helvetica-Bold").fontSize(16).fillColor(theme.front.accent);
-    doc.text(displayName.toUpperCase(), 0, nameY, {
+      doc.font("Helvetica-Bold").fontSize(17).fillColor(theme.front.accent);
+      doc.text(displayName.charAt(0).toUpperCase(), iconX, iconY + 8, {
+        width: iconSize,
+        align: "center",
+        lineBreak: false,
+      });
+    }
+
+    doc.font("Helvetica-Bold").fontSize(22).fillColor(theme.front.accent);
+    doc.text(displayName.toUpperCase(), 0, 98, {
       width: W,
       align: "center",
       lineBreak: false,
-      characterSpacing: 1.3,
     });
 
-    if (displaySub) {
-      doc.font("Helvetica-Oblique").fontSize(10).fillColor(theme.front.text);
-      doc.text(displaySub, 0, nameY + 22, {
+    if (displayTagline) {
+      doc.font("Helvetica-Oblique").fontSize(11).fillColor(theme.front.text);
+      doc.text(displayTagline, 0, 128, {
         width: W,
         align: "center",
         lineBreak: false,
       });
     }
 
-    const lineW = 60;
-    const lineY = displaySub ? nameY + 38 : nameY + 24;
-
-    doc.save();
-    doc.fillOpacity(0.5);
-    doc.rect((W - lineW) / 2, lineY, lineW, 1).fill(theme.front.accent);
-    doc.restore();
-
-    if (card.brandName && (card.name || card.role)) {
-      const parts = [card.name, card.role].filter(Boolean).join("  ·  ");
-      doc.font("Helvetica").fontSize(8).fillColor(theme.front.sub);
-      doc.text(parts, 0, H - 26, {
-        width: W,
+    if (servicesText) {
+      doc.font("Helvetica").fontSize(8.5).fillColor(theme.front.sub);
+      doc.text(servicesText, 35, 156, {
+        width: W - 70,
         align: "center",
-        lineBreak: false,
       });
     }
 
-    // BACK
     doc.addPage({ size: [W, H], margin: 0 });
     drawGradientBg(doc, W, H, theme.back.bg1, theme.back.bg2);
 
